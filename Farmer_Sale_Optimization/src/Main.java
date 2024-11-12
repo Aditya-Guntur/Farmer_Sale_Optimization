@@ -2,6 +2,12 @@ import java.io.*;
 import java.util.*;
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import java.io.PrintWriter;
+import java.io.IOException;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
+import java.io.UnsupportedEncodingException;
+
 
 class State {
     String name;
@@ -216,7 +222,7 @@ class StateGraph {
         return distances.get(end);
     }
 
-    public void printShortestPath(String start, String end) {
+    public void printShortestPath(String start, String end, PrintWriter outputWriter) {
         Map<String, Integer> distances = new HashMap<>();
         Map<String, String> previousStates = new HashMap<>();
         PriorityQueue<String> queue = new PriorityQueue<>(
@@ -257,9 +263,10 @@ class StateGraph {
             current = previousStates.get(current);
         }
 
-        System.out.println("Route: " + String.join(" -> ", path));
-        System.out.println("Total distance: " + distances.get(end) + " km");
+        outputWriter.println("Route: " + String.join(" -> ", path));
+        outputWriter.println("Total distance: " + distances.get(end) + " km");
     }
+
 }
 
 class ProfitOptimizer {
@@ -269,55 +276,9 @@ class ProfitOptimizer {
     private Map<String, Map<String, Integer>> stateDemands;
     private Map<String, TransportPlan> optimalPlans;
 
-    public ProfitOptimizer() {
-        foodItems = new HashMap<>();
-        stateDemands = new HashMap<>();
-        optimalPlans = new HashMap<>();
-    }
-
-    public void printOptimalSolution(StateGraph graph, FileWriter writer) {
-        if (optimalPlans.isEmpty()) {
-            System.out.println("No optimal plans found.");
-            return;
-        }
-
-        try {
-            System.out.println("\nOptimal Transport Plans:");
-            writer.write("\nOptimal Transport Plans:\n");
-
-            for (Map.Entry<String, TransportPlan> entry : optimalPlans.entrySet()) {
-                TransportPlan plan = entry.getValue();
-                System.out.println("Destination: " + plan.destination);
-                writer.write("Destination: " + plan.destination + "\n");
-
-                System.out.println("  Total Profit: $" + String.format("%.2f", plan.totalProfit));
-                writer.write("  Total Profit: $" + String.format("%.2f", plan.totalProfit) + "\n");
-
-                System.out.println("  Estimated Delivery Days: " + plan.estimatedDays);
-                writer.write("  Estimated Delivery Days: " + plan.estimatedDays + "\n");
-
-                System.out.println("  Total Weight: " + String.format("%.2f", plan.totalWeight) + " kg");
-                writer.write("  Total Weight: " + String.format("%.2f", plan.totalWeight) + " kg\n");
-
-                System.out.println("  Items to Transport:");
-                writer.write("  Items to Transport:\n");
-
-                for (Map.Entry<String, Integer> itemEntry : plan.itemQuantities.entrySet()) {
-                    System.out.println("    " + itemEntry.getKey() + ": " + itemEntry.getValue() + " units");
-                    writer.write("    " + itemEntry.getKey() + ": " + itemEntry.getValue() + " units\n");
-                }
-
-                System.out.println();
-                writer.write("\n");
-            }
-        } catch (IOException e) {
-            System.err.println("Error writing to output file: " + e.getMessage());
-        }
-    }
-
     static class TransportPlan {
         String destination;
-        Map<String, Integer> itemQuantities;
+        Map<String, Integer> itemQuantities; // food item -> quantity
         double totalProfit;
         int estimatedDays;
         double totalWeight;
@@ -348,68 +309,121 @@ class ProfitOptimizer {
             this.deliveryDays = deliveryDays;
         }
     }
+    public ProfitOptimizer() {
+        foodItems = new HashMap<>();
+        stateDemands = new HashMap<>();
+        optimalPlans = new HashMap<>();
+    }
 
-    public void optimizeDistribution(String farmerState, int vehicleCapacity, StateGraph graph) {
-        if (farmerState == null || vehicleCapacity <= 0 || graph == null) {
-            System.err.println("Invalid input parameters for optimization");
-            return;
-        }
-
-        optimalPlans.clear();
-        List<KnapsackItem> allPossibleItems = generatePossibleItems(farmerState, vehicleCapacity, graph);
-
-        if (allPossibleItems.isEmpty()) {
-            System.out.println("No valid items found for optimization");
-            return;
-        }
-
+    public void loadFoodItems(String line) {
         try {
-            solveKnapsack(allPossibleItems, vehicleCapacity);
+            String[] data = line.split(",");
+            if (data.length < 6) {
+                System.err.println("Insufficient data for food item: " + line);
+                return;
+            }
+
+            String name = data[0];
+            double weight = Double.parseDouble(data[4]);
+            if (weight <= 0) {
+                System.err.println("Invalid weight for food item: " + name);
+                return;
+            }
+
+            // Other parsing remains the same
+            foodItems.put(name, new FoodItem(name, Double.parseDouble(data[1]), Integer.parseInt(data[2]),
+                    Double.parseDouble(data[3]), weight, Double.parseDouble(data[5])));
+        } catch (NumberFormatException e) {
+            System.err.println("Error parsing weight or other fields: " + e.getMessage());
         } catch (Exception e) {
-            System.err.println("Error during knapsack optimization: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("Error loading food item: " + e.getMessage());
         }
     }
 
-    private List<KnapsackItem> generatePossibleItems(String farmerState, int vehicleCapacity, StateGraph graph) {
-        List<KnapsackItem> items = new ArrayList<>();
 
+    public void loadStateDemand(String line) {
+        String[] data = line.split(",");
+        String state = data[0];
+        String food = data[1];
+        int demand = Integer.parseInt(data[2]);
+
+        stateDemands.putIfAbsent(state, new HashMap<>());
+        stateDemands.get(state).put(food, demand);
+    }
+
+    private int calculateDeliveryDays(double distance) {
+        return (int) Math.ceil(distance / DAILY_DISTANCE_LIMIT);
+    }
+
+    private double calculateTimeDependentProfit(double baseProfit, int deliveryDays, FoodItem item) {
+        // Apply freshness decay based on delivery time and growing time
+        double freshnessDecay = 1.0 - (deliveryDays * 0.1); // 10% decay per day
+        // Items with longer growing times are more resilient to transport time
+        freshnessDecay *= (1.0 - (item.growingTime / 100.0));
+        return baseProfit * Math.max(0.5, freshnessDecay);
+    }
+
+    public void optimizeDistribution(String farmerState, int vehicleCapacity, StateGraph graph) {
+        optimalPlans.clear();
+        List<KnapsackItem> allPossibleItems = new ArrayList<>();
+
+        // Generate all possible transport combinations
         for (String destState : stateDemands.keySet()) {
             if (destState.equals(farmerState)) continue;
 
             int distance = graph.getShortestPathDistance(farmerState, destState);
-            if (distance == Integer.MAX_VALUE) continue;
-
             int deliveryDays = calculateDeliveryDays(distance);
+
+            // Skip if delivery would take too long
             if (deliveryDays > MAX_DELIVERY_DAYS) continue;
 
-            Map<String, Integer> demands = stateDemands.get(destState);
-            if (demands == null) continue;
-
-            for (Map.Entry<String, Integer> demand : demands.entrySet()) {
+            for (Map.Entry<String, Integer> demand : stateDemands.get(destState).entrySet()) {
                 String foodName = demand.getKey();
+                int demandQuantity = demand.getValue();
                 FoodItem food = foodItems.get(foodName);
 
-                if (food == null) continue;
+                // Calculate maximum quantity based on vehicle capacity
+                int maxQuantity = Math.min(demandQuantity,
+                        (int)(vehicleCapacity / food.weight));
 
-                int demandQuantity = demand.getValue();
-                if (food.weight <= 0) continue;
+                if (maxQuantity > 0) {
+                    double baseProfit = calculateBaseProfit(foodName, farmerState,
+                            destState, maxQuantity, graph);
+                    double timeAdjustedProfit = calculateTimeDependentProfit(baseProfit,
+                            deliveryDays, food);
 
-                int maxQuantity = Math.min(demandQuantity, (int) Math.floor(vehicleCapacity / food.weight));
-                if (maxQuantity <= 0) continue;
+                    // Create knapsack item
+                    KnapsackItem item = new KnapsackItem(
+                            foodName,
+                            destState,
+                            maxQuantity,
+                            food.weight * maxQuantity,
+                            timeAdjustedProfit,
+                            deliveryDays
+                    );
 
-                double baseProfit = calculateBaseProfit(foodName, farmerState, destState, maxQuantity, graph);
-                if (baseProfit <= 0) continue;
-
-                double timeAdjustedProfit = calculateTimeDependentProfit(baseProfit, deliveryDays, food);
-
-                KnapsackItem item = new KnapsackItem(foodName, destState, maxQuantity, food.weight * maxQuantity,
-                        timeAdjustedProfit, deliveryDays);
-                items.add(item);
+                    allPossibleItems.add(item);
+                }
             }
         }
 
-        return items;
+        // Solve knapsack problem
+        solveKnapsack(allPossibleItems, vehicleCapacity);
+    }
+
+    private double calculateBaseProfit(String foodName, String fromState,
+                                       String toState, int quantity, StateGraph graph) {
+        FoodItem food = foodItems.get(foodName);
+        if (food == null) return 0;
+
+        int distance = graph.getShortestPathDistance(fromState, toState);
+        if (distance == Integer.MAX_VALUE) return 0;
+
+        double productionCost = food.productionCost * quantity;
+        double transportCost = food.transportCostPerMile * distance * quantity * food.weight;
+        double revenue = food.pricePerUnit * quantity;
+
+        return revenue - productionCost - transportCost;
     }
 
     private void solveKnapsack(List<KnapsackItem> items, int capacity) {
@@ -417,38 +431,35 @@ class ProfitOptimizer {
         double[][] dp = new double[n + 1][capacity + 1];
         boolean[][] selected = new boolean[n + 1][capacity + 1];
 
+        // Fill the dp table
         for (int i = 1; i <= n; i++) {
             KnapsackItem item = items.get(i - 1);
-
             for (int w = 0; w <= capacity; w++) {
-                dp[i][w] = dp[i - 1][w];
-
-                if (item.weight <= w && item.weight > 0) {
-                    int remainingCapacity = (int) (w - item.weight);
-                    if (remainingCapacity >= 0) {
-                        double includeItem = dp[i - 1][remainingCapacity] + item.profit;
-                        if (includeItem > dp[i - 1][w]) {
-                            dp[i][w] = includeItem;
-                            selected[i][w] = true;
-                        }
+                if (item.weight <= w) {
+                    double includeItem = dp[i - 1][(int)(w - item.weight)] + item.profit;
+                    if (includeItem > dp[i - 1][w]) {
+                        dp[i][w] = includeItem;
+                        selected[i][w] = true;
+                    } else {
+                        dp[i][w] = dp[i - 1][w];
                     }
+                } else {
+                    dp[i][w] = dp[i - 1][w];
                 }
             }
         }
 
+        // Reconstruct solution
         List<KnapsackItem> selectedItems = new ArrayList<>();
         int w = capacity;
-
-        for (int i = n; i > 0 && w > 0; i--) {
+        for (int i = n; i > 0; i--) {
             if (selected[i][w]) {
-                KnapsackItem item = items.get(i - 1);
-                if (item.weight <= w) {
-                    selectedItems.add(item);
-                    w -= item.weight;
-                }
+                selectedItems.add(items.get(i - 1));
+                w -= items.get(i - 1).weight;
             }
         }
 
+        // Create transport plans from selected items
         createTransportPlans(selectedItems);
     }
 
@@ -456,12 +467,8 @@ class ProfitOptimizer {
         Map<String, TransportPlan> plans = new HashMap<>();
 
         for (KnapsackItem item : selectedItems) {
-            if (item == null) continue;
-
             plans.putIfAbsent(item.destination, new TransportPlan());
             TransportPlan plan = plans.get(item.destination);
-
-            if (plan == null) continue;
 
             plan.destination = item.destination;
             plan.itemQuantities.put(item.foodName, item.quantity);
@@ -473,85 +480,38 @@ class ProfitOptimizer {
         optimalPlans = plans;
     }
 
-    private double calculateBaseProfit(String foodName, String fromState, String toState, int quantity, StateGraph graph) {
-        FoodItem food = foodItems.get(foodName);
-        if (food == null) return 0;
+    public void printOptimalSolution(StateGraph graph,PrintWriter outputWriter) {
+        outputWriter.println("\nOptimal Distribution Plan with Time Constraints:");
+        outputWriter.println("=============================================");
 
-        int distance = graph.getShortestPathDistance(fromState, toState);
-        if (distance == Integer.MAX_VALUE || distance <= 0) return 0;
+        double totalProfit = 0;
 
-        try {
-            double productionCost = food.productionCost * quantity;
-            double transportCost = food.transportCostPerMile * distance * quantity * food.weight;
-            double revenue = food.pricePerUnit * quantity;
+        for (TransportPlan plan : optimalPlans.values()) {
+            outputWriter.printf("\nDestination: %s\n", plan.destination);
+            outputWriter.printf("Estimated Delivery Time: %d days\n", plan.estimatedDays);
+            outputWriter.printf("Total Load Weight: %.2f kg\n", plan.totalWeight);
+            outputWriter.println("\nItems to Transport:");
 
-            return revenue - productionCost - transportCost;
-        } catch (Exception e) {
-            System.err.println("Error calculating profit: " + e.getMessage());
-            return 0;
-        }
-    }
+            for (Map.Entry<String, Integer> entry : plan.itemQuantities.entrySet()) {
+                String foodName = entry.getKey();
+                int quantity = entry.getValue();
+                FoodItem food = foodItems.get(foodName);
 
-    private double calculateTimeDependentProfit(double baseProfit, int deliveryDays, FoodItem item) {
-        if (baseProfit <= 0 || deliveryDays <= 0 || item == null) return 0;
-
-        try {
-            double freshnessDecay = Math.max(0, 1.0 - (deliveryDays * 0.1));
-            double growingTimeFactor = Math.max(0, 1.0 - (item.growingTime / 100.0));
-            return baseProfit * Math.max(0.5, freshnessDecay * growingTimeFactor);
-        } catch (Exception e) {
-            System.err.println("Error calculating time-dependent profit: " + e.getMessage());
-            return 0;
-        }
-    }
-
-    private int calculateDeliveryDays(double distance) {
-        if (distance <= 0) return Integer.MAX_VALUE;
-        return (int) Math.ceil(distance / DAILY_DISTANCE_LIMIT);
-    }
-
-    public void loadFoodItems(String line) {
-        try {
-            String[] data = line.split(",");
-            if (data.length < 6) return;
-
-            String name = data[0];
-            double price = Double.parseDouble(data[1]);
-            int growingTime = Integer.parseInt(data[2]);
-            double prodCost = Double.parseDouble(data[3]);
-            double weight = Double.parseDouble(data[4]);
-            double transportCost = Double.parseDouble(data[5]);
-
-            if (weight <= 0) {
-                System.err.println("Invalid weight for food item: " + name);
-                return;
+                outputWriter.printf("- %s: %d units (%.2f kg)\n",
+                        foodName, quantity, quantity * food.weight);
             }
 
-            foodItems.put(name, new FoodItem(name, price, growingTime, prodCost, weight, transportCost));
-        } catch (Exception e) {
-            System.err.println("Error loading food item: " + e.getMessage());
+            outputWriter.printf("Expected Profit: ₹%.2f\n", plan.totalProfit);
+            outputWriter.println("\nRecommended Route:");
+            graph.printShortestPath(graph.getCurrentState(), plan.destination, outputWriter);
+
+            totalProfit += plan.totalProfit;
         }
-    }
 
-    public void loadStateDemand(String line) {
-        try {
-            String[] data = line.split(",");
-            if (data.length < 3) return;
-
-            String state = data[0];
-            String food = data[1];
-            int demand = Integer.parseInt(data[2]);
-
-            if (demand <= 0) {
-                System.err.println("Invalid demand for state " + state + ": " + demand);
-                return;
-            }
-
-            stateDemands.putIfAbsent(state, new HashMap<>());
-            stateDemands.get(state).put(food, demand);
-        } catch (Exception e) {
-            System.err.println("Error loading state demand: " + e.getMessage());
-        }
+        outputWriter.printf("\nTotal Expected Profit: ₹%.2f\n", totalProfit);
+        outputWriter.println("\nNote: All deliveries are scheduled within the 7-day freshness window");
+        outputWriter.println("Daily distance limit of 400km has been considered for delivery time calculations");
+        outputWriter.flush();
     }
 }
 
@@ -566,7 +526,6 @@ public class Main {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select Data File");
         fileChooser.setFileFilter(new FileNameExtensionFilter("Text Files", "txt"));
-
 
         String filePath = null;
         while (filePath == null) {
@@ -605,94 +564,74 @@ public class Main {
 
         System.out.print("Enter vehicle capacity (in kg): ");
         int vehicleCapacity = scanner.nextInt();
-        scanner.nextLine(); // consume newline
+        scanner.nextLine();
 
-        // Initial optimization
-        optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
 
-        while (true) {
-            System.out.println("\nOptions:");
-            System.out.println("1. Change farmer's location");
-            System.out.println("2. Change vehicle capacity");
-            System.out.println("3. View current routes");
-            System.out.println("4. Add new route");
-            System.out.println("5. Recalculate optimal distribution");
-            System.out.println("6. Exit");
-            System.out.print("Enter choice: ");
 
-            JFileChooser outputFileChooser = new JFileChooser();
-            outputFileChooser.setDialogTitle("Select Output File Location");
-            outputFileChooser.setSelectedFile(new File("output.txt"));
 
-            String outputFilePath = null;
-            while (outputFilePath == null) {
-                int outputResult = outputFileChooser.showSaveDialog(null);
 
-                if (outputResult == JFileChooser.APPROVE_OPTION) {
-                    File selectedOutputFile = outputFileChooser.getSelectedFile();
-                    outputFilePath = selectedOutputFile.getAbsolutePath();
-                    System.out.println("Output file selected: " + outputFilePath);
-                    break;
-                } else {
-                    System.out.println("No output file selected. Exiting the program.");
-                    scanner.close();
-                    System.exit(0);
+        try (PrintWriter outputWriter = new PrintWriter("output.txt")) {
+            // Initial optimization
+            optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
+            optimizer.printOptimalSolution(graph, outputWriter);
+
+            while (true) {
+                System.out.println("\nOptions:");
+                System.out.println("1. Change farmer's location");
+                System.out.println("2. Change vehicle capacity");
+                System.out.println("3. View current routes");
+                System.out.println("4. Add new route");
+                System.out.println("5. Recalculate optimal distribution");
+                System.out.println("6. Exit");
+                System.out.print("Enter choice: ");
+
+                int choice = scanner.nextInt();
+                scanner.nextLine(); // consume newline
+
+                switch (choice) {
+                    case 1:
+                        System.out.print("Enter new state: ");
+                        farmerState = scanner.nextLine();
+                        graph.setCurrentState(farmerState);
+                        optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
+                        optimizer.printOptimalSolution(graph,outputWriter);
+                        break;
+
+                    case 2:
+                        System.out.print("Enter new vehicle capacity (in kg): ");
+                        vehicleCapacity = scanner.nextInt();
+                        scanner.nextLine(); // consume newline
+                        optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
+                        optimizer.printOptimalSolution(graph,outputWriter);
+                        break;
+
+                    case 3:
+                        graph.printRoutes();
+                        break;
+
+                    case 4:
+                        graph.addUserDefinedRoute(scanner);
+                        optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
+                        optimizer.printOptimalSolution(graph,outputWriter);
+                        break;
+
+                    case 5:
+                        optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
+                        optimizer.printOptimalSolution(graph,outputWriter);
+                        break;
+
+                    case 6:
+                        System.out.println("\nThank you for using Farmer's Profit Optimization System!");
+                        scanner.close();
+                        System.exit(0);
+                        break;
+
+                    default:
+                        System.out.println("Invalid choice! Please try again.");
                 }
             }
-
-            // Use the selected output file path
-            try (FileWriter writer = new FileWriter(new File(outputFilePath))) {
-                optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
-                optimizer.printOptimalSolution(graph, writer);
-                System.out.println("\nOutput written to: " + outputFilePath);
-            } catch (IOException e) {
-                System.err.println("Error writing to output file: " + e.getMessage());
-            }
-
-            int choice = scanner.nextInt();
-            scanner.nextLine(); // consume newline
-
-            switch (choice) {
-                case 1:
-                    System.out.print("Enter new state: ");
-                    farmerState = scanner.nextLine();
-                    graph.setCurrentState(farmerState);
-                    optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
-                case 2:
-                    System.out.print("Enter new vehicle capacity (in kg): ");
-                    vehicleCapacity = scanner.nextInt();
-                    scanner.nextLine(); // consume newline
-                    optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
-
-
-
-                case 3:
-                    graph.printRoutes();
-                    break;
-
-                case 4:
-                    graph.addUserDefinedRoute(scanner);
-                    optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
-
-
-                case 5:
-                    optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
-
-                case 6:
-                    System.out.println("\nThank you for using Farmer's Profit Optimization System!");
-                    try (FileWriter writer = new FileWriter(new File(outputFilePath))) {
-                        optimizer.printOptimalSolution(graph, writer);
-                        System.out.println("\nOutput written to: " + outputFilePath);
-                    } catch (IOException e) {
-                        System.err.println("Error writing to output file: " + e.getMessage());
-                    }
-                    scanner.close();
-                    System.exit(0);
-                    break;
-
-                default:
-                    System.out.println("Invalid choice! Please try again.");
-            }
+        }catch (IOException e) {
+            // Handle the exception, e.g., log the error or provide a user-friendly message
+            System.out.println("Error creating output file: " + e.getMessage());
         }
-    }
-}
+    } }
