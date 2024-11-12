@@ -1,0 +1,108 @@
+// states.csv
+state,latitude,longitude
+Punjab,31.1471,75.3412
+Haryana,29.0588,76.0856
+Uttar Pradesh,26.8467,80.9462
+Bihar,25.0961,85.3131
+West Bengal,22.9868,87.8550
+Maharashtra,19.7515,75.7139
+Gujarat,22.2587,71.1924
+Madhya Pradesh,22.9734,78.6569
+Karnataka,15.3173,75.7139
+Tamil Nadu,11.1271,78.6569
+Andhra Pradesh,15.9129,79.7400
+Rajasthan,27.0238,74.2179
+Kerala,10.8505,76.2711
+Odisha,20.9517,85.0985
+Telangana,17.1231,79.2089
+
+// routes.csv
+from_state,to_state,distance
+Punjab,Haryana,250
+Punjab,Rajasthan,500
+Haryana,Uttar Pradesh,400
+Haryana,Rajasthan,350
+Uttar Pradesh,Bihar,550
+Uttar Pradesh,Madhya Pradesh,600
+Bihar,West Bengal,480
+Madhya Pradesh,Maharashtra,800
+Madhya Pradesh,Gujarat,750
+Maharashtra,Karnataka,700
+Maharashtra,Telangana,550
+Karnataka,Tamil Nadu,450
+Karnataka,Andhra Pradesh,500
+Tamil Nadu,Kerala,400
+Andhra Pradesh,Telangana,250
+Telangana,Odisha,850
+Gujarat,Rajasthan,600
+Odisha,West Bengal,450
+Maharashtra,Gujarat,650
+Madhya Pradesh,Rajasthan,550
+
+// food_items.csv
+name,price_per_unit,growing_time,production_cost,weight,transport_cost_per_mile
+Wheat,25.00,4,12.00,1.00,0.015
+Rice,30.00,4,15.00,1.00,0.015
+Potatoes,15.00,3,5.00,1.00,0.012
+Onions,20.00,4,7.00,1.00,0.010
+Tomatoes,18.00,3,6.00,0.50,0.011
+Pulses,70.00,4,30.00,1.00,0.014
+Sugarcane,3.50,12,1.50,1.00,0.008
+Cotton,120.00,6,45.00,0.50,0.020
+Mangoes,60.00,5,25.00,1.00,0.018
+Bananas,35.00,4,12.00,1.00,0.013
+Cauliflower,25.00,3,8.00,0.75,0.012
+Carrots,18.00,3,6.00,0.50,0.010
+Soybeans,45.00,4,20.00,1.00,0.015
+Groundnuts,55.00,4,25.00,1.00,0.016
+Tea,200.00,5,80.00,0.25,0.025
+
+// state_demands.csv
+state,food,demand
+Punjab,Rice,5000
+Punjab,Wheat,3000
+Punjab,Potatoes,2000
+Haryana,Wheat,4000
+Haryana,Rice,3500
+Haryana,Onions,2500
+Uttar Pradesh,Wheat,6000
+Uttar Pradesh,Rice,5500
+Uttar Pradesh,Potatoes,3000
+Uttar Pradesh,Sugarcane,8000
+Bihar,Rice,4500
+Bihar,Wheat,3500
+Bihar,Pulses,2000
+West Bengal,Rice,5500
+West Bengal,Potatoes,2500
+West Bengal,Tea,1500
+Maharashtra,Cotton,3000
+Maharashtra,Onions,4000
+Maharashtra,Mangoes,2000
+Maharashtra,Sugarcane,5000
+Gujarat,Cotton,3500
+Gujarat,Groundnuts,2500
+Gujarat,Wheat,3000
+Madhya Pradesh,Soybeans,4000
+Madhya Pradesh,Wheat,3500
+Madhya Pradesh,Pulses,2500
+Karnataka,Rice,3000
+Karnataka,Sugarcane,4000
+Karnataka,Mangoes,1500
+Tamil Nadu,Rice,4000
+Tamil Nadu,Sugarcane,3500
+Tamil Nadu,Bananas,2000
+Andhra Pradesh,Rice,4500
+Andhra Pradesh,Cotton,2500
+Andhra Pradesh,Mangoes,1800
+Rajasthan,Wheat,3500
+Rajasthan,Pulses,2000
+Rajasthan,Cotton,1500
+Kerala,Rice,3000
+Kerala,Bananas,1500
+Kerala,Tea,1000
+Odisha,Rice,3500
+Odisha,Pulses,1800
+Odisha,Potatoes,1500
+Telangana,Rice,4000
+Telangana,Cotton,2000
+Telangana,Pulses,1500
