@@ -568,9 +568,10 @@ public class Main {
 
 
 
+        String currentDir = System.getProperty("user.dir");
+        String outputFilePath = currentDir + File.separator + "output.txt";
 
-
-        try (PrintWriter outputWriter = new PrintWriter("output.txt")) {
+        try (PrintWriter outputWriter = new PrintWriter(outputFilePath)) {
             // Initial optimization
             optimizer.optimizeDistribution(farmerState, vehicleCapacity, graph);
             optimizer.printOptimalSolution(graph, outputWriter);
