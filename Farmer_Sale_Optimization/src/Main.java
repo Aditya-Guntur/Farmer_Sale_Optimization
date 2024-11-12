@@ -568,8 +568,8 @@ public class Main {
 
 
 
-        String currentDir = System.getProperty("user.dir");
-        String outputFilePath = currentDir + File.separator + "output.txt";
+        //String currentDir = System.getProperty("user.dir");
+        String outputFilePath = "output.txt";
 
         try (PrintWriter outputWriter = new PrintWriter(outputFilePath)) {
             // Initial optimization
